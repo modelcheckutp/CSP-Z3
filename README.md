@@ -1,1 +1,1 @@
-CSP-Z3 is a Z3-based CSP model checker, based on the denotational semantics.  
+CSP-Z3 is a Z3-based CSP model checker, based on the denotational semantics. The users can find the UTP CSP model without variables in the csp directory, the model with local variables in the csp_local, the model with shared variables in the csp_shared, and other examples such as the dining philosophers problem in the example directory.  
