@@ -428,7 +428,8 @@ def SFRef(P,Q):
         #checking Q
         s.push() #2
         s.add(And(Q.relation(Q.iv, Q.fv), Q.iv == init, ok(Q.fv), tr(Q.fv) == t, ref(Q.fv)==r))
-        if s.check() == sat:
+
+        if s.check() != unsat:
             s.pop() #2 remove the constraint for Q
             # same trace but different refusals
             s.push() #3 for P, same trace but different refs
