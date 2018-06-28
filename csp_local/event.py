@@ -19,6 +19,17 @@ Set = FSetDecl([a,b,c,d])
 # defined a fullset
 Fullset = Set.fullset()
 
+##################################################
+## Definition for local variables
+##################################################
+
+LocalVar = Datatype('LocalVar')
+LocalVar.declare('LocalTuple', ('lx', IntSort()), ('ly', IntSort()), ('lz', BoolSort()))
+LocalVar = LocalVar.create()
+LocalTuple = LocalVar.LocalTuple
+lx = LocalVar.lx
+ly = LocalVar.ly
+lz = LocalVar.lz
 
 
 

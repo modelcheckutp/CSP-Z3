@@ -1,19 +1,24 @@
+######################################
+## Kun Wei 28/06/2018
+## uncomment to use the examples
+#######################################
+
 from vcsp import *
 
-s = String('s')
-s2 = String('s2')
+# we've defined two integers, lx and ly, and one boolean variable, lz.
 
-f = Function('f', Event, StringSort())
+#e1.
+# P = lx:=1;ly:=2;lx:=lx+ly
+# we expect lx'=3 and ly'=2
 
-csp_solver.add(f(a)==StringVal("abc"))
-csp_solver.add(f(b)==StringVal("def"))
-csp_solver.add(f(c)==StringVal("h"))
-csp_solver.add(f(d)==StringVal("i"))
+#P = Seq(Seq(Assign('lx', '1'), Assign('ly', '2')), Assign('lx', 'ly+lx'))
+# this restricts the initial states and some final states
+#csp_solver.add(P.relation(P.iv, P.fv), ok(P.iv)==True, wait(P.iv)==False, tr(P.iv)==nil, ref(P.iv)==Fullset, P.fv == fv, ok(fv), Not(wait(P.fv)))
+#print(csp_solver.check())
+#print(csp_solver.model()[fv])
 
-shuttle = Function('shuttle', List, StringSort())
-csp_solver.add(mk_rec(shuttle(l), If(l== nil, StringVal("skip"+"skip"), Concat(f(car(l)), shuttle(cdr(l))))))
+#e2.
+# P = lx:=1 ; (lx>0& a->Skip [] lx<0 & b->Skip)
+#P = Seq(Assign('lx', '1'), EC(Guard('lx>0', SP(a)), Guard('lx<0', SP(b))))
+#ListAllTraces(P)
 
-csp_solver.add(shuttle(cons(c,cons(a,cons(b,nil)))) == s2 )
-
-print(csp_solver.check())
-print(csp_solver.model()[s2])

@@ -1,6 +1,6 @@
 ##########################################
 #  UTP CSP Theory in Z3py with new recursion feature
-#  Kun Wei 08/10/2018
+#  Kun Wei 08/01/2018
 # version 1.0
 ##########################################
 
@@ -29,22 +29,11 @@
 from list import *
 from finite_set import *
 
-
-#local variable names for integers and bools
-# add more datatypes if needed
-LocalIV, (ix,iy,iz) = EnumSort('LocalIntegerVariableName', ('ix','iy','iz'))
-LocalBV, (bx,by,bz) = EnumSort('LocalBoolVariableName', ('bx', 'by', 'bz'))
-
-# local variables as observation
-LocalVariables = Datatype('LocalVariables')
-LocalVariables.declare('SetOfVariableList', ('ia', ArraySort(LocalIV, IntSort())), ('ba', ArraySort(LocalBV, BoolSort())))
-LocalVariables = LocalVariables.create()
-ia = LocalVariables.ia
-ba = LocalVariables.ba
-
 # Observational Variables
 Variables = Datatype('Variables')
-Variables.declare('Tuple', ('ok', BoolSort()), ('wait', BoolSort()), ('tr', List), ('ref', SetSort), ('loc', LocalVariables))
+Variables.declare('Tuple', ('ok', BoolSort()), ('wait', BoolSort()), ('tr', List), ('ref', SetSort),
+                           ('loc', LocalVar))
+
 Variables = Variables.create()
 
 Tuple = Variables.Tuple
@@ -94,12 +83,12 @@ class PProcess:  # process for parallel because of the alphabetised interface
 
         self.iv = Const('iv_%s'%self.id, Variables)
         self.fv = Const('fv_%s'%self.id, Variables)
-        self.pt = Const('pt_%s'%self.id, List)
+        self.pt3 = Const('pt3_%s'%self.id, List)
         self.pt1 = Const('pt1_%s' % self.id, List)
         self.pt2 = Const('pt2_%s' % self.id, List)
 
         # the predicate to match the pair of initial and final
-        predicate = substitute(predicate, (iv, self.iv), (fv, self.fv),(l, self.pt), (l1, self.pt1), (l2, self.pt2) )
+        predicate = substitute(predicate, (iv, self.iv), (fv, self.fv),(l3, self.pt3), (l1, self.pt1), (l2, self.pt2) )
 
         # interface
         al = Set.alphabet # the list of all elements in the alphabet
@@ -166,11 +155,12 @@ Miracle = Process(con(R(False), ok(iv), IDiv), set(), "Miracle")
 # Stop = R(wait:=true)
 # Stop = R(true |- tr'=tr and wait')
 # Stop = R(ok' and tr'=tr and wait' and ref'=FullSet) <| ok |> IDiv
-Stop = Process(con(R(And(ok(fv), wait(fv), tr(fv) == tr(iv), loc(iv)==loc(fv),ref(fv) == Fullset)), ok(iv), IDiv), set(), "Stop")
+Stop = Process(con(R(And(ok(fv), wait(fv), tr(fv) == tr(iv), ref(fv) == Fullset)), ok(iv), IDiv), set(), "Stop")
 
 # Skip = R(true |- tr'=tr and not wait')
 # Skip = R(ok' and tr'=tr and not wait and ref'=FullSet <| ok |> IDiv)
-Skip = Process(con(R(And(ok(fv), Not(wait(fv)), tr(fv) == tr(iv), loc(iv)==loc(fv), ref(fv) == Fullset)), ok(iv), IDiv), set(), "Skip")
+Skip = Process(con(R(And(ok(fv), Not(wait(fv)), tr(fv) == tr(iv), loc(iv)==loc(fv), ref(fv) == Fullset)),
+                   ok(iv), IDiv), set(), "Skip")
 
 
 ###################################################################
@@ -195,7 +185,7 @@ def EventToString(e):
 
 def SP(a):
     max_ref = Set.complement(Set.add(a,Set.emptyset()))
-    return Process(con(R(And(ok(fv), con(And(tr(fv)==tr(iv), loc(fv)==loc(iv), ref(fv)==max_ref),
+    return Process(con(R(And(ok(fv), con(And(tr(fv)==tr(iv), ref(fv)==max_ref),
                                              wait(fv),
                                              And(diff(tr(fv),tr(iv),cons(a,nil)), loc(fv)==loc(iv), ref(fv)==Fullset)))),
                        ok(iv),
@@ -226,53 +216,45 @@ def Seq(P, Q):
 ### assignment
 #################################################################
 
-def LocalVariableNameToString(V):
+def LocalVariableNamesToString(V):
     ls = [];
-    for i in range(V.num_constructors()):
-        ls.append(V.constructor(i).name())
+    for i in range(V.constructor(0).arity()):
+        ls.append(V.accessor(0,i).name())
     return ls
 
+#print(LocalVariablesToString(LocalVar))
+#print (substitute(lx+1, (lx, ly(loc(iv)))))
+
+#print(lx(loc(iv)))
+
 def ReplaceVariablesByValues(expr):
-    li = LocalVariableNameToString(LocalIV)
-    lb = LocalVariableNameToString(LocalBV)
-
-    for i in range(len(li)):
-        expr = expr.replace(li[i], 'Select(ia(loc(iv)),'+li[i]+')')
-
-    for i in range(len(lb)):
-        expr = expr.replace(lb[i], 'Select(ba(loc(iv)),' + lb[i] + ')')
-
+    localnames = LocalVariableNamesToString(LocalVar)
+    for i in range(len(localnames)):
+        expr = expr.replace(localnames[i], localnames[i]+'(loc(iv))')
     return expr
 
-# assignment: v must be the abstract variables, here, LocalIV and LocalBV
+
+def AssignmentConstraints(v, expr):
+    localnames = LocalVariableNamesToString(LocalVar)
+
+    # replace all variables in the left with iv
+    for i in range(len(localnames)):
+        expr = expr.replace(localnames[i], localnames[i] + '(loc(iv))')
+
+    # produce the full constraints for assignment
+    constraints = ''
+    for i in range(len(localnames)):
+        if localnames[i] != v:
+            constraints = constraints + ',' + localnames[i] + '(loc(fv))==' + localnames[i] + '(loc(iv))'
+
+    return 'And(' + v + '(loc(fv))==' + expr + ',' + constraints[1:] + ')'
+
+
+# assignment: v and expr must be Strings. For example, lx:=lx+1 should be Assign('lx', 'lx+1')
 # expr must be a string which contains undashed only
 def Assign(v, expr):
-    if v.sort()==LocalIV:
-        return Process(con(R(And(ok(fv), Not(wait(fv)), tr(fv) == tr(iv), ref(fv) == Fullset,
-                                 ba(loc(fv))==ba(loc(iv)),
-                                 ia(loc(fv))== Store(ia(loc(iv)), v, eval(ReplaceVariablesByValues(expr))))),
-                           ok(iv), IDiv), set([v.decl().name()]), "Assign("+v.decl().name()+",'"+expr+"')")
-    else:
-        return Process(con(R(And(ok(fv), Not(wait(fv)), tr(fv) == tr(iv), ref(fv) == Fullset,
-                                 ia(loc(fv)) == ia(loc(iv)),
-                                 ba(loc(fv)) == Store(ba(loc(iv)), v, eval(ReplaceVariablesByValues(expr))))),
-                           ok(iv), IDiv), set([v.decl().name()]), "Assign(" + v.decl().name() + ",'" + expr + "')")
-
-
-#################################
-# testing for assignment
-#################################
-#s = default_solver
-#x = Int('x')
-#y = Int('y')
-#z = Int('z')
-#P = Seq(Assign(ix, 'ix+1'), Skip)
-#s.add(And(ok(iv), Not(wait(iv)), tr(iv)==nil, ref(iv)==Fullset, ia(loc(iv))[ix]==2, ia(loc(iv))[iy]==1 ))
-#s.add(And(P.relation(P.iv, P.fv), ok(P.iv), P.iv == iv, P.fv==fv,
-#          ok(fv), Not(wait(fv)), x==Select(ia(loc(fv)),ix), y==Select(ia(loc(fv)),iy), z==Select(ia(loc(fv)),iz)))
-#print (s.check())
-#print (s.model()[x])
-#print (s.model()[y])
+    return Process(con(R(And(ok(fv), Not(wait(fv)), tr(fv) == tr(iv), ref(fv) == Fullset, eval(AssignmentConstraints(v,expr)))),
+                       ok(iv), IDiv), set([v]), "Assign('"+ v +"','"+expr+"')")
 
 
 #expr must be a string containing undashed variables
@@ -280,23 +262,7 @@ def Guard(expr, P):
     return Process(con(R(con(And(P.relation(P.iv,P.fv), P.iv==iv, P.fv==fv),
                                  eval(ReplaceVariablesByValues(expr)),
                                  And(ok(fv), wait(fv), tr(fv)==tr(iv), ref(fv)==Fullset))),
-                       ok(iv),
-                       IDiv), P.alphabet, "Guard('" + expr +"'," + P.expr +")")
-
-######################################
-## testing for guarded processes
-######################################
-#s = default_solver
-#x = Int('x')
-#y = Int('y')
-#z = Int('z')
-#P = Guard('ix<0', Guard('iy>0', Assign(iy, 'iy+1')))
-#s.add(And(ok(iv), Not(wait(iv)), tr(iv)==nil, ref(iv)==Fullset, ia(loc(iv))[ix]==2, ia(loc(iv))[iy]==1 ))
-#s.add(And(P.relation(P.iv, P.fv), ok(P.iv), P.iv == iv, P.fv==fv,
-#          ok(fv), (wait(fv)), x==Select(ia(loc(fv)),ix), y==Select(ia(loc(fv)),iy), z==Select(ia(loc(fv)),iz)))
-#print (s.check())
-#print (s.model()[x])
-#print (s.model()[y])
+                       ok(iv), IDiv), P.alphabet, "Guard('" + expr +"'," + P.expr +")")
 
 # external choince
 # P[]Q = R(¬Pff and ¬Qff |- (Ptf and Qtf) <| tr'=tr and wait' |> (Ptf or Qtf))
@@ -325,15 +291,26 @@ def IC(P, Q):
 ### Parallel Composition
 ### P [| A |] Q = (ok'== P.ok' and Q.ok') and (wait'== P.wait' or Q.wait') and (tr'-tr==prod(A,P.tr'-P.tr,Q.tr'-Q.tr))
 ###                ref' = union(inter(union(P.ref',Q.ref'),A), (inter(P.ref',Q.ref')\A)
-# s is a set of variables which need updating
-# left and right are arrays of variables for integers, bool or other
-# ll is a list of variable names for certain type
-def UpdateLocalValuesToString(s, left, right, ll):
-    c=left
-    for e in s:
-        if e in ll:
-            c = Store(c, eval(e), Select(right,eval(e)))
-    return c
+
+def LocalVariableUpdateInParallel(s1, s2): # s1 is for P and s2 is for Q by default
+    assert(s1.intersection(s2)== set())
+    localnames = LocalVariableNamesToString(LocalVar)
+
+    expr = ''
+    for i in s1:
+        if i in localnames:
+            expr = expr + ',' + i + '(loc(P.fv))==' + i + '(loc(fv))'
+
+    for i in s2:
+        if i in localnames:
+            expr = expr + ',' + i + '(loc(Q.fv))==' + i + '(loc(fv))'
+    s3 = s1.union(s2)
+    for i in localnames:
+        if i not in s3:
+            expr = expr + ',' + i + '(loc(fv))==' + i + '(loc(iv))'
+    return 'And(' + expr[1:] + ')'
+
+#print(LocalVariableUpdateInParallel(set(['lx','ly']), set(['lz','gy'])))
 
 def Par(CS, P, Q):
     r = Set.toSet(CS)  # r is  the interface
@@ -343,34 +320,19 @@ def Par(CS, P, Q):
                                   parallel(global_process_index, l1, l2, l3),
                                   ref(fv) == (Set.union(Set.intersection(Set.union(ref(P.fv), ref(Q.fv)), r),
                                                         Set.difference(Set.intersection(ref(P.fv), ref(Q.fv)),r))),
-                                  ia(loc(fv)) == UpdateLocalValuesToString(Q.alphabet, ia(loc(P.fv)), ia(loc(Q.fv)), LocalVariableNameToString(LocalIV)),
-                                  ba(loc(fv)) == UpdateLocalValuesToString(Q.alphabet, ba(loc(P.fv)), ba(loc(Q.fv)), LocalVariableNameToString(LocalBV)) )),
+                                  eval(LocalVariableUpdateInParallel(P.alphabet, Q.alphabet)))),
                             ok(iv), IDiv), set().union(P.alphabet, Q.alphabet), "Par(" + str(CS) + "," + P.expr + "," + Q.expr + ")")
 
-###################################
-# testing for parallel
-###################################
-#s = default_solver
-#x = Int('x')
-#y = Int('y')
-#P = Par([], Seq(SP(a),Assign(ix, 'ix+1')), Seq(SP(b), Assign(iy, 'iy+1')))
-#s.add(And(ok(iv), Not(wait(iv)), tr(iv)==nil, ref(iv)==Fullset, ia(loc(iv))[ix]==1, ia(loc(iv))[iy]==1 ))
-#s.add(And(P.relation(P.iv, P.fv), ok(P.iv), P.iv == iv, P.fv==fv,ok(fv), Not(wait(fv)), tr(fv)!=cons(b,cons(a,nil)), x==Select(ia(loc(fv)),ix), y==Select(ia(loc(fv)),iy)))
-#print (s.check())
-#print (s.model()[x])
-#print (s.model()[y])
-#print (s.model()[fv])
 
 ### Hiding
 def Hide(P, CS):
     r = Set.toSet(CS)
     return PProcess(CS, con(R(And(P.relation(P.iv, P.fv), P.iv == iv,
                                   diff(tr(P.fv), tr(P.iv), l1),
-                                  diff(tr(fv), tr(P.iv), l), event_filter(global_process_index, l1) == l,
-                                  ref(fv) == Set.union(ref(P.fv), r), ref(P.fv) == Set.union(ref(fv), r),
-                                  ok(P.fv) == ok(fv), wait(P.fv) == wait(fv), loc(P.fv)==loc(fv))),
+                                 diff(tr(fv), tr(P.iv), l), event_filter(global_process_index, l1) == l,
+                                 ref(fv) == Set.union(ref(P.fv), r), ref(P.fv) == Set.union(ref(fv), r),
+                                 ok(P.fv) == ok(fv), wait(P.fv) == wait(fv), loc(P.fv)==loc(fv))),
                             ok(iv), IDiv), P.alphabet, "Hide(" + P.expr + "," + str(CS) + ")")
-
 
 
 
